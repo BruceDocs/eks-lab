@@ -1,0 +1,8 @@
+lowercaseOutputName: true
+includeObjectNames:
+  - "java.lang:*"
+  - "kafka.producer:*"
+  - "kafka.consumer:*"
+  - "com.zaxxer.hikari:*"
+rules:
+  - pattern: ".*"

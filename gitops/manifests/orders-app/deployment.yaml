@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: orders-service, namespace: team-a }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: orders-service } }
+  template:
+    metadata: { labels: { app: orders-service } }
+    spec:
+      containers:
+        - name: app
+          image: 123456789012.dkr.ecr.ca-central-1.amazonaws.com/orders-service:1.0.0   # replaced by scripts/04
+          ports:
+            - { name: http, containerPort: 8080 }
+            - { name: jmx,  containerPort: 9404 }
+          env:
+            - { name: MYSQL_HOST, value: mysql.mysql.svc.cluster.local }
+            - { name: MYSQL_DB,   value: ordersdb }
+            - { name: MYSQL_USER, valueFrom: { secretKeyRef: { name: mysql-credentials, key: username } } }
+            - { name: MYSQL_PASSWORD, valueFrom: { secretKeyRef: { name: mysql-credentials, key: password } } }
+            - { name: KAFKA_BOOTSTRAP, value: "lab-kafka-kafka-bootstrap.kafka.svc:9092" }
+          readinessProbe: { httpGet: { path: /actuator/health/readiness, port: http }, initialDelaySeconds: 30, periodSeconds: 10 }
+          livenessProbe:  { httpGet: { path: /actuator/health/liveness,  port: http }, initialDelaySeconds: 60, periodSeconds: 15 }
+          resources: { requests: { cpu: 250m, memory: 512Mi }, limits: { memory: 768Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-service
+  namespace: team-a
+  labels: { app: orders-service }
+spec:
+  selector: { app: orders-service }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+    - { name: jmx,  port: 9404, targetPort: jmx }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: { name: orders-service, namespace: team-a }
+spec:
+  selector: { matchLabels: { app: orders-service } }
+  jobLabel: app
+  endpoints:
+    - { port: http, path: /actuator/prometheus, interval: 15s }   # Micrometer metrics
+    - { port: jmx,  path: /metrics,             interval: 30s }   # JMX exporter javaagent

@@ -1,0 +1,31 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: lab-eks
+  region: ca-central-1          # change as needed
+  version: "1.32"
+iam:
+  withOIDC: true
+addons:
+  - name: vpc-cni
+  - name: coredns
+  - name: kube-proxy
+  - name: metrics-server
+  - name: aws-ebs-csi-driver     # needed for PVCs (Kafka, MySQL, Prometheus)
+    wellKnownPolicies:
+      ebsCSIController: true
+accessConfig:
+  authenticationMode: API_AND_CONFIG_MAP   # enables EKS access entries (IAM -> K8s RBAC)
+managedNodeGroups:
+  - name: ng-spot
+    instanceTypes:               # same size (2 vCPU / 8 GiB) -> more Spot pools, fewer interruptions
+      - m5.large
+      - m5a.large
+      - m5d.large
+    spot: true                   # Spot capacity (~65% cheaper than On-Demand)
+    desiredCapacity: 3
+    minSize: 3
+    maxSize: 4
+    volumeSize: 30
+    privateNetworking: true
+    labels: { role: worker }

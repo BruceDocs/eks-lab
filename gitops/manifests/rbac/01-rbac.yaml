@@ -1,0 +1,84 @@
+############ 1) GROUP LEVEL (cluster-wide) ############
+# Group "platform-admins" -> cluster-admin
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: platform-admins-cluster-admin }
+subjects: [{ kind: Group, name: platform-admins, apiGroup: rbac.authorization.k8s.io }]
+roleRef: { kind: ClusterRole, name: cluster-admin, apiGroup: rbac.authorization.k8s.io }
+---
+# Group "all-engineers" -> minimal cluster read (namespaces/nodes only; NOT workloads/secrets)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: engineer-cluster-readonly }
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, nodes]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: all-engineers-cluster-readonly }
+subjects: [{ kind: Group, name: all-engineers, apiGroup: rbac.authorization.k8s.io }]
+roleRef: { kind: ClusterRole, name: engineer-cluster-readonly, apiGroup: rbac.authorization.k8s.io }
+---
+############ 2) TEAM LEVEL (namespace-scoped) ############
+# team-a developers -> built-in "edit" in team-a only
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: team-a-devs-edit, namespace: team-a }
+subjects: [{ kind: Group, name: team-a-devs, apiGroup: rbac.authorization.k8s.io }]
+roleRef: { kind: ClusterRole, name: edit, apiGroup: rbac.authorization.k8s.io }
+---
+# team-a leads -> built-in "admin" in team-a (can manage RoleBindings)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: team-a-leads-admin, namespace: team-a }
+subjects: [{ kind: Group, name: team-a-leads, apiGroup: rbac.authorization.k8s.io }]
+roleRef: { kind: ClusterRole, name: admin, apiGroup: rbac.authorization.k8s.io }
+---
+# team-b developers -> edit in team-b only (proves isolation)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: team-b-devs-edit, namespace: team-b }
+subjects: [{ kind: Group, name: team-b-devs, apiGroup: rbac.authorization.k8s.io }]
+roleRef: { kind: ClusterRole, name: edit, apiGroup: rbac.authorization.k8s.io }
+---
+############ 3) USER LEVEL (single user, custom least-privilege Role) ############
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: pod-log-reader, namespace: team-a }
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: carol-pod-log-reader, namespace: team-a }
+subjects: [{ kind: User, name: carol, apiGroup: rbac.authorization.k8s.io }]
+roleRef: { kind: Role, name: pod-log-reader, apiGroup: rbac.authorization.k8s.io }
+---
+# user "carol" may also port-forward to Grafana in monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: grafana-portforward, namespace: monitoring }
+rules:
+  - apiGroups: [""]
+    resources: [pods, services]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/portforward]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: carol-grafana-portforward, namespace: monitoring }
+subjects: [{ kind: User, name: carol, apiGroup: rbac.authorization.k8s.io }]
+roleRef: { kind: Role, name: grafana-portforward, apiGroup: rbac.authorization.k8s.io }
+---
+############ Guardrail: quota for team-a ############
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: team-a-quota, namespace: team-a }
+spec:
+  hard: { requests.cpu: "4", requests.memory: 6Gi, pods: "30" }

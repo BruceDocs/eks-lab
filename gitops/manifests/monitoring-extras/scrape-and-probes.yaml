@@ -1,0 +1,74 @@
+# MySQL exporter
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: { name: mysql, namespace: monitoring }
+spec:
+  namespaceSelector: { matchNames: [mysql] }
+  selector: { matchLabels: { app: mysql } }
+  endpoints: [{ port: metrics, interval: 30s }]
+---
+# Kafka brokers (JMX exporter) + Kafka Exporter pods (Strimzi names the port tcp-prometheus)
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata: { name: kafka, namespace: monitoring }
+spec:
+  namespaceSelector: { matchNames: [kafka] }
+  selector:
+    matchExpressions:
+      - { key: strimzi.io/kind, operator: In, values: [Kafka] }
+  podMetricsEndpoints:
+    - { port: tcp-prometheus, path: /metrics, interval: 30s }
+---
+# Blackbox probes
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata: { name: http-checks, namespace: monitoring }
+spec:
+  jobName: blackbox-http
+  interval: 30s
+  module: http_2xx
+  prober: { url: prometheus-blackbox-exporter.monitoring.svc:9115 }
+  targets:
+    staticConfig:
+      static:
+        - http://orders-service.team-a.svc:8080/actuator/health
+        - https://aws.amazon.com
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata: { name: tcp-checks, namespace: monitoring }
+spec:
+  jobName: blackbox-tcp
+  interval: 30s
+  module: tcp_connect
+  prober: { url: prometheus-blackbox-exporter.monitoring.svc:9115 }
+  targets:
+    staticConfig:
+      static:
+        - mysql.mysql.svc:3306
+        - lab-kafka-kafka-bootstrap.kafka.svc:9092
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: { name: lab-alerts, namespace: monitoring }
+spec:
+  groups:
+    - name: lab
+      rules:
+        - alert: ProbeFailed
+          expr: probe_success == 0
+          for: 2m
+          labels: { severity: critical }
+          annotations: { summary: "Blackbox probe failed for {{ $labels.instance }}" }
+        - alert: MySQLDown
+          expr: mysql_up == 0
+          for: 1m
+          labels: { severity: critical }
+        - alert: KafkaUnderReplicatedPartitions
+          expr: sum(kafka_server_replicamanager_underreplicatedpartitions) > 0
+          for: 5m
+          labels: { severity: warning }
+        - alert: OrdersServiceDown
+          expr: up{job="orders-service"} == 0
+          for: 2m
+          labels: { severity: critical }

@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: blackbox-exporter
+  namespace: argocd
+  annotations: { argocd.argoproj.io/sync-wave: "1" }
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus-blackbox-exporter
+    targetRevision: "9.*"          # pin to a version you've tested
+    helm:
+      releaseName: prometheus-blackbox-exporter   # => Service prometheus-blackbox-exporter:9115
+      valuesObject:
+        config:
+          modules:
+            http_2xx:
+              prober: http
+              timeout: 5s
+              http: { valid_status_codes: [], preferred_ip_protocol: ip4 }
+            tcp_connect:
+              prober: tcp
+              timeout: 5s
+  destination: { server: https://kubernetes.default.svc, namespace: monitoring }
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
